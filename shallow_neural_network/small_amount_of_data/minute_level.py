@@ -23,7 +23,7 @@ class LSTMModel(nn.Module):
 
 
 if __name__ == '__main__':
-    file_path = "LD2011_2014.txt"
+    file_path = "../../LD2011_2014.txt"
     shift_unit = 24 * 4 * 30
     total_rows = sum(1 for _ in open(file_path, encoding='utf-8')) - 1  # 减去1是为了排除标题行
 
