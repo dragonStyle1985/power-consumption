@@ -1,35 +1,24 @@
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
+import xgboost as xgb
 from tqdm import tqdm
 
-
-class LSTMModel(nn.Module):
-    def __init__(self, batch_size_, input_dim_, hidden_dim_, output_dim_):
-        super(LSTMModel, self).__init__()
-        self.hidden_dim_ = hidden_dim_
-        self.batch_size = batch_size_
-        self.lstm = nn.LSTM(input_dim_, hidden_dim_, batch_first=True)
-        self.fc = nn.Linear(hidden_dim_, output_dim_, dtype=torch.float32)
-
-    def forward(self, x_):
-        lstm_out, _ = self.lstm(x_)
-        return self.fc(lstm_out[:, -1, :])
-
+from util import batch_generator
 
 if __name__ == '__main__':
-    file_path = "../LD2011_2014.txt"
+    file_path = "../../LD2011_2014.txt"
     shift_unit = 24 * 4 * 30
     total_rows = sum(1 for _ in open(file_path, encoding='utf-8')) - 1  # 减去1是为了排除标题行
 
     data = pd.read_csv(file_path, sep=';', header=None, skiprows=1, low_memory=False, nrows=7000)  # 1个月有2880行
+    column_names = ['Date'] + ['MT_' + str(i).zfill(3) for i in range(1, 371)]
+    data.columns = column_names
 
     print(data.head())
 
@@ -71,44 +60,51 @@ if __name__ == '__main__':
     train_generator = batch_generator(windowed_data, windowed_target, train_indices, batch_size)
     test_generator = batch_generator(windowed_data, windowed_target, test_indices, batch_size)
 
-    # Set the hyperparameters
-    input_dim = data.shape[1]  # Number of input features (excluding the timestamp column)
-    hidden_dim = 64  # Number of hidden units
-    output_dim = 1  # Number of output predictions
-    num_epochs = 1
-    learning_rate = 0.001
+    params = {
+        'tree_method': 'gpu_hist',  # 使用GPU加速的方法
+        'gpu_id': [0, 1]  # 指定要使用的GPU设备索引
+    }
 
-    # Create the model
-    model = LSTMModel(batch_size, input_dim, hidden_dim, output_dim)
+    # 创建 XGBoost 模型
+    model = xgb.XGBRegressor(**params)
 
-    # Define the loss function and optimizer
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    # 估计训练批次的总数
+    num_samples = len(indices)
+    num_batches = num_samples // batch_size
 
-    # Training loop
-    for epoch in range(num_epochs):
-        model.train()
-        optimizer.zero_grad()
-        pbar = tqdm(total=train_num_batches, desc='Training Progress', leave=False)
-        pbar.set_description(f'Epoch {epoch + 1}/{num_epochs}')
+    # Training loop with progress bar
+    progress_bar = tqdm(total=num_batches, desc="Training")
 
-        # Loop over the batches
-        for batch_data, batch_target in train_generator:
+    for batch_data, batch_target in train_generator:
+        # 将批量数据转换为XGBoost的DMatrix格式
+        dmatrix = xgb.DMatrix(data=np.reshape(batch_data, (64, -1)), label=batch_target)
+        model.fit(np.reshape(batch_data, (64, -1)), batch_target)
 
-            # Perform the forward pass and update the model
-            train_outputs = model(torch.from_numpy(batch_data).float())
-            loss = criterion(train_outputs, torch.from_numpy(batch_target).unsqueeze(1).float())
+        # 更新进度条
+        progress_bar.update(1)
 
-            # Backward pass and optimization
-            loss.backward()
-            optimizer.step()
+    # 关闭进度条
+    progress_bar.close()
 
-            # Update the progress bar
-            pbar.set_postfix({'Loss': loss.item()})
-            pbar.update()
+    # 存储预测结果的列表
+    predictions = []
 
-    # Evaluation
-    model.eval()
+    # 逐个批次进行预测
+    for batch_data, _ in test_generator:
+        # 将批量数据转换为 XGBoost 的 DMatrix 格式
+        dmatrix = xgb.DMatrix(data=np.reshape(batch_data, (64, -1)))
+
+        # 在测试集上进行预测
+        batch_predictions = model.predict(dmatrix)
+
+        # 将批次预测结果添加到总体预测列表
+        predictions.append(batch_predictions)
+
+    # 将预测结果拼接为一个 numpy 数组
+    test_predictions = np.concatenate(predictions)
+
+    # 打印预测结果
+    print(test_predictions)
 
     y_true = []  # 存储真实标签值
     y_pred = []  # 存储预测值
