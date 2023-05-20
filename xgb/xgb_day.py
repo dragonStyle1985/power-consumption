@@ -23,7 +23,7 @@ if __name__ == '__main__':
     data.set_index('Date', inplace=True)
     data.fillna(0, inplace=True)
 
-    data[data.columns[1:]] = data[data.columns[1:]].replace(',', '', regex=True).astype(float)  # 去除数据中的逗号并转换为浮点数
+    data = data.replace(',', '', regex=True).astype(float)  # 去除数据中的逗号并转换为浮点数
     daily_aggregated_data = data.resample('D').sum(numeric_only=True)
 
     print(daily_aggregated_data.head(3))
@@ -38,7 +38,7 @@ if __name__ == '__main__':
     scaler = MinMaxScaler()  # Normalize the daily_aggregated_data
     data_normalized = scaler.fit_transform(daily_aggregated_data)
 
-    window_size = 90  # 滑动窗口的大小
+    window_size = 180  # 滑动窗口的大小
 
     # 使用 sliding_window_view 函数创建滑动窗口的视图
     windowed_data = np.lib.stride_tricks.sliding_window_view(data_normalized, (window_size, daily_aggregated_data.shape[1])).squeeze(1)
@@ -67,8 +67,8 @@ if __name__ == '__main__':
     model = xgb.XGBRegressor(
         tree_method='gpu_hist',
         gpu_id=0,
-        n_estimators=100,  # 设置树的数量
-        learning_rate=0.1,  # 设置学习率
+        n_estimators=200,  # 设置树的数量
+        learning_rate=0.01,  # 设置学习率
         max_depth=3,  # 设置树的最大深度
     )
 
@@ -102,7 +102,7 @@ if __name__ == '__main__':
 
         # 输出预测结果和对应的时间信息
         for pred, time_info in zip(batch_predictions, batch_time_info):
-            predictions_dict = {}
+            predictions_dict[time_info] = pred
 
     # 按照时间信息升序显示预测结果
     for time_info, pred in sorted(predictions_dict.items()):

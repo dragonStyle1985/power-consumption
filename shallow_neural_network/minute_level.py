@@ -11,19 +11,6 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 
-class LSTMModel(nn.Module):
-    def __init__(self, batch_size_, input_dim_, hidden_dim_, output_dim_):
-        super(LSTMModel, self).__init__()
-        self.hidden_dim_ = hidden_dim_
-        self.batch_size = batch_size_
-        self.lstm = nn.LSTM(input_dim_, hidden_dim_, batch_first=True)
-        self.fc = nn.Linear(hidden_dim_, output_dim_, dtype=torch.float32)
-
-    def forward(self, x_):
-        lstm_out, _ = self.lstm(x_)
-        return self.fc(lstm_out[:, -1, :])
-
-
 if __name__ == '__main__':
     file_path = "../LD2011_2014.txt"
     shift_unit = 24 * 4 * 30
